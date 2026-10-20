@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       PROJECT_NAME: FiveNightsAtPaws
@@ -29,6 +29,7 @@ jobs:
       - name: Show Xcode and project info
         run: |
           xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
           xcodebuild -list -project "$PROJECT_NAME.xcodeproj"
 
       - name: Archive (no code signing)
