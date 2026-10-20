@@ -1,0 +1,72 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      PROJECT_NAME: FiveNightsAtPaws
+
+    steps:
+      - name: Checkout (with Git LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Check that LFS files are real files
+        run: |
+          ls -lh "$PROJECT_NAME.pck"
+          if head -c 100 "$PROJECT_NAME.pck" | grep -q "git-lfs.github.com"; then
+            echo "::error::$PROJECT_NAME.pck is an LFS pointer, not the real file"
+            exit 1
+          fi
+
+      - name: Show Xcode and project info
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project "$PROJECT_NAME.xcodeproj"
+
+      - name: Archive (no code signing)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project "$PROJECT_NAME.xcodeproj" \
+            -scheme "$PROJECT_NAME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/$PROJECT_NAME.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Package .ipa
+        run: |
+          APP_PATH=$(find "$RUNNER_TEMP/$PROJECT_NAME.xcarchive/Products/Applications" -maxdepth 1 -name "*.app" | head -n 1)
+          echo "App: $APP_PATH"
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/$PROJECT_NAME.ipa" Payload)
+          ls -lh "$GITHUB_WORKSPACE/$PROJECT_NAME.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-ipa
+          path: ${{ env.PROJECT_NAME }}.ipa
+          compression-level: 0
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ runner.temp }}/build.log
+          retention-days: 7
